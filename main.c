@@ -49,7 +49,7 @@ static void print_log(const char *format, ...)
         char buff[MIN_BUFF_SIZE];
         time_t now = time(NULL);
         va_list ap;
-        strftime(buff, sizeof(buff), "%m/%d %H:%M:%S", localtime(&now));
+        strftime(buff, sizeof(buff), "%m-%d %H:%M:%S", localtime(&now));
         va_start(ap, format);
         vsnprintf(message, sizeof(message), format, ap); 
         va_end(ap);
@@ -60,29 +60,35 @@ static void print_log(const char *format, ...)
     }
 }
 
-static size_t curl_write_buff(char *data, size_t size, size_t count, char *buff) {
+static size_t _curl_write_buff(const char *data, size_t size, size_t count, void *buff) {
     if(buff == NULL) return 0;
     size_t len = size * count;
     strncat(buff, data, len);
     return len;
 }
 
-static size_t curl_write_file(char *data, size_t size, size_t count, FILE *file) {
+static size_t _curl_write_file(const void *data, size_t size, size_t count, FILE *file) {
     if(file == NULL) return 0;
     size_t len = fwrite(data, size, count, file);
     return len;
 }
 
+size_t (*curl_write_buff)(const char *data, size_t size, size_t count, void *buff) = _curl_write_buff;
 static bool curl_buff(const char *url, char *buff) {
     if(buff == NULL) return false; else *buff = 0;
     CURL *curl = curl_easy_init();
     curl_easy_setopt(curl, CURLOPT_URL, url);
+    if(strstr(url, "http://") != NULL) {
+        if(strlen(config.http_proxy) != 0)
+            curl_easy_setopt(curl, CURLOPT_PROXY, config.http_proxy);
+    } else if(strstr(url, "https://") != NULL) {
+        if(strlen(config.https_proxy) != 0)
+            curl_easy_setopt(curl, CURLOPT_PROXY, config.https_proxy);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    }
     if(strlen(config.cookies) != 0)
         curl_easy_setopt(curl, CURLOPT_COOKIE, config.cookies);
-    if(strlen(config.http_proxy) != 0 && strstr(url, "http://") != NULL)
-        curl_easy_setopt(curl, CURLOPT_PROXY, config.http_proxy);
-    if(strlen(config.https_proxy) != 0 && strstr(url, "https://") != NULL)
-        curl_easy_setopt(curl, CURLOPT_PROXY, config.https_proxy);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_buff);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, buff);
     bool ret =  curl_easy_perform(curl);
@@ -90,16 +96,22 @@ static bool curl_buff(const char *url, char *buff) {
     return ret == 0;
 }
 
+size_t (*curl_write_file)(const void *data, size_t size, size_t count, FILE *file) = _curl_write_file;
 static bool curl_file(const char *url, FILE *file) {
     if(file == NULL) return false;
     CURL *curl = curl_easy_init();
     curl_easy_setopt(curl, CURLOPT_URL, url);
+    if(strstr(url, "http://") != NULL) {
+        if(strlen(config.http_proxy) != 0)
+            curl_easy_setopt(curl, CURLOPT_PROXY, config.http_proxy);
+    } else if(strstr(url, "https://") != NULL) {
+        if(strlen(config.https_proxy) != 0)
+            curl_easy_setopt(curl, CURLOPT_PROXY, config.https_proxy);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    }
     if(strlen(config.cookies) != 0)
         curl_easy_setopt(curl, CURLOPT_COOKIE, config.cookies);
-    if(strlen(config.http_proxy) != 0 && strstr(url, "http://") != NULL)
-        curl_easy_setopt(curl, CURLOPT_PROXY, config.http_proxy);
-    if(strlen(config.https_proxy) != 0 && strstr(url, "https://") != NULL)
-        curl_easy_setopt(curl, CURLOPT_PROXY, config.https_proxy);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 30L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_file);
@@ -179,6 +191,7 @@ static void *handle_loop(void *param) {
     }
     lua_close(L);
     pthread_exit(NULL);
+    return NULL;
 }
 
 void exit_hook(int number)
@@ -246,6 +259,7 @@ int main(int argc, char **argv) {
     }
     curl_global_init(CURL_GLOBAL_ALL);
 
+#ifdef __linux
     char home[MIN_BUFF_SIZE] = {0};
     char dirname[MIN_BUFF_SIZE] = {0};
     char filename[MIN_BUFF_SIZE] = {0};
@@ -255,13 +269,16 @@ int main(int argc, char **argv) {
     sprintf(config_file, "%s/.%s/%s", home, dirname, filename);
     strcpy(filename, logger_file);
     sprintf(logger_file, "%s/.%s/%s", home, dirname, filename);
+#endif
 
     if(!load_config()) {
         printf("config load error: %s\n", config_file);
         return 1;
     } else {
+#ifdef __linux
         strcpy(filename, config.script);
         sprintf(config.script, "%s/.%s/%s", home, dirname, filename);
+#endif
     }
 
     int opt = 0;
@@ -326,10 +343,12 @@ int main(int argc, char **argv) {
     print_log("thread count: %d", THREAD_COUNT);
 
     signal(SIGINT, exit_hook);
+    signal(SIGTERM, exit_hook);
+#ifdef __linux
     signal(SIGKILL, exit_hook);
     signal(SIGQUIT, exit_hook);
-    signal(SIGTERM, exit_hook);
     signal(SIGHUP, exit_hook);
+#endif
 
     int i = 0, j = 0;
     pthread_t tid[THREAD_COUNT];
