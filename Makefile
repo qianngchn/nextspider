@@ -46,7 +46,7 @@ linux:
 	$(MAKE) $(ALL) "PLATLDFLAGS=-ldl -lm"
 
 mingw:
-	$(MAKE) $(ALL) "PLATCFLAGS=-DCURL_STATICLIB" "PLATLDFLAGS=-lssl -lcrypto -lgdi32 -lwldap32 -lz -lws2_32"
+	$(MAKE) $(ALL) "PLATCFLAGS=-static -DCURL_STATICLIB" "PLATLDFLAGS=-lssl -lcrypto -lgdi32 -lwldap32 -lz -lws2_32"
 
 $(OBJS):$(SRCS)
 	$(CC) -c $^ $(CFLAGS) $(LDFLAGS)
@@ -69,6 +69,7 @@ install:
 
 uninstall:
 	cd $(INSTALL_BIN) && $(RM) $(BIN)
+	cd $(INSTALL_ETC) && $(RM) $(ETC)
 
 clean:
 	$(RM) $(OBJS)

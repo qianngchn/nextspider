@@ -5,8 +5,10 @@
 -- stop: the value determines whether nextspider continues to access url and download files
 
 function parse_html(url, html)
-    local nexturl = "https://qianngchn.github.io/index.html";
-    local files = "https://qianngchn.github.io/favicon.ico favicon.ico https://qianngchn.github.io/index.html index.html https://qianngchn.github.io/wiki.html wiki.html"
+    local nexturl = "https://github.com/qianngchn/nextspider";
+    local files = "https://raw.githubusercontent.com/qianngchn/nextspider/master/config.lua config.lua https://raw.githubusercontent.com/qianngchn/nextspider/master/default.lua default.lua"
     local stop = true;
+    print(url);
+    print(html);
     return nexturl, files, stop;
 end

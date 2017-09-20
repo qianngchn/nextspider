@@ -7,8 +7,6 @@ script = "default.lua";
 --http_proxy = "http://127.0.0.1:7777";
 -- https_proxy: https proxy setting used by nextspider
 --https_proxy = "https://127.0.0.1:7777";
--- update_url: nextspider will show the information of the update url
-update_url = "https://raw.githubusercontent.com/qianngchn/nextspider/master/scripts/list.lua";
 -- check_mode: check whether lua script executes correctly, without downloading any file
 check_mode = false;
 -- quiet: whether to write output to stdout

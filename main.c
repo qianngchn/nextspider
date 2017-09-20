@@ -23,7 +23,6 @@ typedef struct {
     char cookies[MIN_BUFF_SIZE];
     char http_proxy[MIN_BUFF_SIZE];
     char https_proxy[MIN_BUFF_SIZE];
-    char update_url[MIN_BUFF_SIZE];
     bool check_mode;
     bool quiet;
     bool logger;
@@ -40,7 +39,7 @@ static bool shutdown_flag = false;
 static FILE *logger = NULL;
 static char logger_file[MIN_BUFF_SIZE] = "stat.log";
 static char config_file[MIN_BUFF_SIZE] = "config.lua";
-static global_config config = {"default.lua", {0}, {0}, {0}, {0}, false, false, false};
+static global_config config = {"default.lua", {0}, {0}, {0}, false, false, false};
 
 static void print_log(const char *format, ...)
 {
@@ -220,10 +219,6 @@ static bool load_config(void) {
         strcpy(config.https_proxy, lua_tostring(L, -1));
         lua_pop(L, 1);
     }
-   if(lua_getglobal(L, "update_url")) {
-        strcpy(config.update_url, lua_tostring(L, -1));
-        lua_pop(L, 1);
-    }
     if(lua_getglobal(L, "check_mode")) {
         config.check_mode = lua_toboolean(L, -1);
         lua_pop(L, 1);
@@ -245,8 +240,8 @@ static void usage(const char *name) {
     printf("  -s: which lua script to execute\n");
     printf("  -k: cookies used to access url with logging and more features\n");
     printf("  -p: support only http and https proxy, example: \"https://127.0.0.1:7777\"\n");
-    printf("  -u: get the latest information from update url\n");
-    printf("  -c: check mode for lua script writing, whithout downloading any files\n");
+    printf("  -u: get the latest release and more lua scripts\n");
+    printf("  -c: check mode for testing lua script, whithout downloading any files\n");
     printf("  -q: quiet mode, do not write output to stdout\n");
     printf("  -l: logger mode, write output to log file\n");
     printf("  -h: show help information\n");
@@ -257,9 +252,8 @@ int main(int argc, char **argv) {
         usage(argv[0]);
         return 1;
     }
-    curl_global_init(CURL_GLOBAL_ALL);
 
-#ifdef __linux
+#if defined(__linux) || defined(__linux__) || defined(linux)
     char home[MIN_BUFF_SIZE] = {0};
     char dirname[MIN_BUFF_SIZE] = {0};
     char filename[MIN_BUFF_SIZE] = {0};
@@ -267,19 +261,14 @@ int main(int argc, char **argv) {
     strcpy(dirname, basename(argv[0]));
     strcpy(filename, config_file);
     sprintf(config_file, "%s/.%s/%s", home, dirname, filename);
+    load_config();
     strcpy(filename, logger_file);
     sprintf(logger_file, "%s/.%s/%s", home, dirname, filename);
+    strcpy(filename, config.script);
+    sprintf(config.script, "%s/.%s/%s", home, dirname, filename);
+#else
+    load_config();
 #endif
-
-    if(!load_config()) {
-        printf("config load error: %s\n", config_file);
-        return 1;
-    } else {
-#ifdef __linux
-        strcpy(filename, config.script);
-        sprintf(config.script, "%s/.%s/%s", home, dirname, filename);
-#endif
-    }
 
     int opt = 0;
     while((opt = getopt(argc, argv, "s:k:p:ucqlh")) != -1) {
@@ -301,14 +290,11 @@ int main(int argc, char **argv) {
                 }
                 break;
             case 'u':
-                if(strlen(config.update_url) != 0) {
-                    char update[MED_BUFF_SIZE] = {0};
-                    if(curl_buff(config.update_url, update))
-                        printf("%s", update);
-                    else
-                        printf("update url error: %s\n", config.update_url);
-                } else
-                    printf("update url is not set\n");
+                curl_global_init(CURL_GLOBAL_ALL);
+                char buff[MED_BUFF_SIZE] = {0};
+                if(curl_buff("https://raw.githubusercontent.com/qianngchn/nextspider/master/scripts/list.lua", buff))
+                    printf("%s", buff);
+                curl_global_cleanup();
                 return 1;
                 break;
             case 'c':
@@ -338,13 +324,12 @@ int main(int argc, char **argv) {
             config.logger = false;
         }
     }
-    print_log("load config: %s", config_file);
-    print_log("script: %s, cookies: %s, http_proxy: %s, https_proxy: %s, update_url: %s, check_mode: %d, quiet: %d, logger: %d", strlen(config.script) ? config.script : "none", strlen(config.cookies) ? config.cookies : "none", strlen(config.http_proxy) ? config.http_proxy : "none", strlen(config.https_proxy) ? config.https_proxy : "none", strlen(config.update_url) ? config.update_url : "none", config.check_mode, config.quiet, config.logger);
+    print_log("script: %s, cookies: %s, http_proxy: %s, https_proxy: %s, check_mode: %d, quiet: %d, logger: %d", strlen(config.script) ? config.script : "none", strlen(config.cookies) ? config.cookies : "none", strlen(config.http_proxy) ? config.http_proxy : "none", strlen(config.https_proxy) ? config.https_proxy : "none", config.check_mode, config.quiet, config.logger);
     print_log("thread count: %d", THREAD_COUNT);
 
     signal(SIGINT, exit_hook);
     signal(SIGTERM, exit_hook);
-#ifdef __linux
+#if defined(__linux) || defined(__linux__) || defined(linux)
     signal(SIGKILL, exit_hook);
     signal(SIGQUIT, exit_hook);
     signal(SIGHUP, exit_hook);
@@ -352,6 +337,7 @@ int main(int argc, char **argv) {
 
     int i = 0, j = 0;
     pthread_t tid[THREAD_COUNT];
+    curl_global_init(CURL_GLOBAL_ALL);
     for(i = 0; i < argc - optind && !shutdown_flag; i = i + THREAD_COUNT) {
         for(j = 0; j < THREAD_COUNT; j++) {
             if(pthread_create(tid+j, NULL, handle_loop, argv[optind + i + j]) != 0)
