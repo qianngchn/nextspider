@@ -39,7 +39,7 @@ static bool shutdown_flag = false;
 static FILE *logger = NULL;
 static char logger_file[MIN_BUFF_SIZE] = "stat.log";
 static char config_file[MIN_BUFF_SIZE] = "config.lua";
-static global_config config = {"default.lua", {0}, {0}, {0}, false, false, false};
+static global_config config = {{0}, {0}, {0}, {0}, false, false, false};
 
 static void print_log(const char *format, ...)
 {
@@ -148,11 +148,21 @@ static bool execute_script(lua_State *L, char *html, char *url, char *files, boo
 static void *handle_loop(void *param) {
     global_script script = {{0}, {0}, {0}, false};
     strncpy(script.url, param, MED_BUFF_SIZE);
+    if(strlen(config.script) == 0) {
+        if(curl_buff(script.url, script.html))
+            printf("%s\n", script.html);
+        else
+            print_log("url get error: %s", script.url);
+        pthread_exit(NULL);
+        return NULL;
+    }
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
     if(luaL_dofile(L, config.script)) {
         print_log("script load error: %s", config.script);
+        lua_close(L);
         pthread_exit(NULL);
+        return NULL;
     }
     while(!script.stop && !shutdown_flag) {
         if(curl_buff(script.url, script.html)) {
@@ -203,31 +213,31 @@ static bool load_config(void) {
     lua_State *L = luaL_newstate();
     if(luaL_dofile(L, config_file))
         return false;
-    if(lua_getglobal(L, "script")) {
+    if(lua_getglobal(L, "script") == LUA_TSTRING) {
         strcpy(config.script, lua_tostring(L, -1));
         lua_pop(L, 1);
     }
-    if(lua_getglobal(L, "cookies")) {
+    if(lua_getglobal(L, "cookies") == LUA_TSTRING) {
         strcpy(config.cookies, lua_tostring(L, -1));
         lua_pop(L, 1);
     }
-    if(lua_getglobal(L, "http_proxy")) {
+    if(lua_getglobal(L, "http_proxy") == LUA_TSTRING) {
         strcpy(config.http_proxy, lua_tostring(L, -1));
         lua_pop(L, 1);
     }
-    if(lua_getglobal(L, "https_proxy")) {
+    if(lua_getglobal(L, "https_proxy") == LUA_TSTRING) {
         strcpy(config.https_proxy, lua_tostring(L, -1));
         lua_pop(L, 1);
     }
-    if(lua_getglobal(L, "check_mode")) {
+    if(lua_getglobal(L, "check_mode") == LUA_TBOOLEAN) {
         config.check_mode = lua_toboolean(L, -1);
         lua_pop(L, 1);
     }
-    if(lua_getglobal(L, "quiet")) {
+    if(lua_getglobal(L, "quiet") == LUA_TBOOLEAN) {
         config.quiet = lua_toboolean(L, -1);
         lua_pop(L, 1);
     }
-    if(lua_getglobal(L, "logger")) {
+    if(lua_getglobal(L, "logger") == LUA_TBOOLEAN) {
         config.logger = lua_toboolean(L, -1);
         lua_pop(L, 1);
     }
@@ -261,11 +271,13 @@ int main(int argc, char **argv) {
     strcpy(dirname, basename(argv[0]));
     strcpy(filename, config_file);
     sprintf(config_file, "%s/.%s/%s", home, dirname, filename);
-    load_config();
     strcpy(filename, logger_file);
     sprintf(logger_file, "%s/.%s/%s", home, dirname, filename);
-    strcpy(filename, config.script);
-    sprintf(config.script, "%s/.%s/%s", home, dirname, filename);
+    load_config();
+    if(strlen(config.script) != 0) {
+        strcpy(filename, config.script);
+        sprintf(config.script, "%s/.%s/%s", home, dirname, filename);
+    }
 #else
     load_config();
 #endif

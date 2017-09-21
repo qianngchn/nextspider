@@ -26,8 +26,8 @@ A simple example:
 
 Command line options can override options in the configuration file.
 
-## Lua Script
-nextspider uses lua script to control download hooks, extend functions and adapt to websites.
+## Lua Scripts
+nextspider uses lua scripts to control download hooks, extend functions and adapt to websites.
 
 An default lua script is like this:
 
@@ -46,8 +46,9 @@ An default lua script is like this:
         return nexturl, files, stop;
     end
 
-## Command Line
-You can get help information using command `nextspider -h`:
+Optionally `nextspider -u` will show my own lua scripts from <https://raw.githubusercontent.com/qianngchn/nextspider/master/scripts/list.lua>, you can choose to download as you like.
+
+## Command Line You can get help information using command `nextspider -h`:
 
     Usage: nextspider [-s luascript] [-k cookies] [-p proxy] [-u] [-c] [-q] [-l] [-h] <url> <url> ...
       -s: which lua script to execute
@@ -60,13 +61,15 @@ You can get help information using command `nextspider -h`:
       -h: show help information
 
 ## Build
--**Linux:** run the following commands
+To build, you should install `liblua` and `libcurl` for developers first.
+
+* **Linux:** run the following commands
 
     git clone https://github.com/qianngchn/nextspider.git
     cd nextspider
     make linux install
 
--**Windows:** you need mingw to build this program
+* **Windows:** for gcc you need mingw, cygwin or other tools, then you can run following commands
 
     git clone https://github.com/qianngchn/nextspider.git
     cd nextspider
