@@ -39,16 +39,17 @@ An default lua script is like this:
 
     function parse_html(url, html)
         local nexturl = "https://github.com/qianngchn/nextspider";
-        local files = "https://raw.githubusercontent.com/qianngchn/nextspider/master/config.lua config.lua https://raw.githubusercontent.com/qianngchn/nextspider/master/default.lua default.lua"
+        local files = "https://raw.githubusercontent.com/qianngchn/nextspider/master/config.lua config.lua https://raw.githubusercontent.com/qianngchn/nextspider/master/default.lua default.lua";
         local stop = true;
         print(url);
         print(html);
         return nexturl, files, stop;
     end
 
-Optionally `nextspider -u` will show my own lua scripts from <https://raw.githubusercontent.com/qianngchn/nextspider/master/scripts/list.lua>, you can choose to download as you like.
+Optionally `nextspider -u` will show lua scripts of mine, you can choose to download as you like.
 
-## Command Line You can get help information using command `nextspider -h`:
+## Command Line
+You can get help information using command `nextspider -h`:
 
     Usage: nextspider [-s luascript] [-k cookies] [-p proxy] [-u] [-c] [-q] [-l] [-h] <url> <url> ...
       -s: which lua script to execute
@@ -65,12 +66,12 @@ To build, you should install `liblua` and `libcurl` for developers first.
 
 * **Linux:** run the following commands
 
-    git clone https://github.com/qianngchn/nextspider.git
-    cd nextspider
-    make linux install
+        git clone https://github.com/qianngchn/nextspider.git
+        cd nextspider
+        make linux install
 
 * **Windows:** for gcc you need mingw, cygwin or other tools, then you can run following commands
 
-    git clone https://github.com/qianngchn/nextspider.git
-    cd nextspider
-    make mingw
+        git clone https://github.com/qianngchn/nextspider.git
+        cd nextspider
+        make mingw

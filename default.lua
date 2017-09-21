@@ -6,7 +6,7 @@
 
 function parse_html(url, html)
     local nexturl = "https://github.com/qianngchn/nextspider";
-    local files = "https://raw.githubusercontent.com/qianngchn/nextspider/master/config.lua config.lua https://raw.githubusercontent.com/qianngchn/nextspider/master/default.lua default.lua"
+    local files = "https://raw.githubusercontent.com/qianngchn/nextspider/master/config.lua config.lua https://raw.githubusercontent.com/qianngchn/nextspider/master/default.lua default.lua";
     local stop = true;
     print(url);
     print(html);
