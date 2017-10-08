@@ -21,8 +21,7 @@
 typedef struct {
     char script[MIN_BUFF_SIZE];
     char cookies[MIN_BUFF_SIZE];
-    char http_proxy[MIN_BUFF_SIZE];
-    char https_proxy[MIN_BUFF_SIZE];
+    char proxy[MIN_BUFF_SIZE];
     bool check_mode;
     bool quiet;
     bool logger;
@@ -39,7 +38,7 @@ static bool shutdown_flag = false;
 static FILE *logger = NULL;
 static char logger_file[MIN_BUFF_SIZE] = "stat.log";
 static char config_file[MIN_BUFF_SIZE] = "config.lua";
-static global_config config = {{0}, {0}, {0}, {0}, false, false, false};
+static global_config config = {{0}, {0}, {0}, false, false, false};
 
 static void print_log(const char *format, ...)
 {
@@ -77,17 +76,20 @@ static bool curl_buff(const char *url, char *buff) {
     if(buff == NULL) return false; else *buff = 0;
     CURL *curl = curl_easy_init();
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    if(strstr(url, "http://") != NULL) {
-        if(strlen(config.http_proxy) != 0)
-            curl_easy_setopt(curl, CURLOPT_PROXY, config.http_proxy);
-    } else if(strstr(url, "https://") != NULL) {
-        if(strlen(config.https_proxy) != 0)
-            curl_easy_setopt(curl, CURLOPT_PROXY, config.https_proxy);
+    if(strstr(url, "https://") != NULL) {
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
     }
     if(strlen(config.cookies) != 0)
         curl_easy_setopt(curl, CURLOPT_COOKIE, config.cookies);
+    if(strlen(config.proxy) != 0)
+        curl_easy_setopt(curl, CURLOPT_PROXY, config.proxy);
+    if(strstr(config.proxy, "http://") != NULL && strstr(url, "http://") == NULL)
+        curl_easy_setopt(curl, CURLOPT_HTTPPROXYTUNNEL, 1L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+#if defined(__linux) || defined(__linux__) || defined(linux)
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+#endif
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_buff);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, buff);
     bool ret =  curl_easy_perform(curl);
@@ -100,17 +102,16 @@ static bool curl_file(const char *url, FILE *file) {
     if(file == NULL) return false;
     CURL *curl = curl_easy_init();
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    if(strstr(url, "http://") != NULL) {
-        if(strlen(config.http_proxy) != 0)
-            curl_easy_setopt(curl, CURLOPT_PROXY, config.http_proxy);
-    } else if(strstr(url, "https://") != NULL) {
-        if(strlen(config.https_proxy) != 0)
-            curl_easy_setopt(curl, CURLOPT_PROXY, config.https_proxy);
+    if(strstr(url, "https://") != NULL) {
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
     }
     if(strlen(config.cookies) != 0)
         curl_easy_setopt(curl, CURLOPT_COOKIE, config.cookies);
+    if(strlen(config.proxy) != 0)
+        curl_easy_setopt(curl, CURLOPT_PROXY, config.proxy);
+    if(strstr(config.proxy, "http://") != NULL && strstr(url, "http://") == NULL)
+        curl_easy_setopt(curl, CURLOPT_HTTPPROXYTUNNEL, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 30L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_file);
@@ -221,12 +222,8 @@ static bool load_config(void) {
         strcpy(config.cookies, lua_tostring(L, -1));
         lua_pop(L, 1);
     }
-    if(lua_getglobal(L, "http_proxy") == LUA_TSTRING) {
-        strcpy(config.http_proxy, lua_tostring(L, -1));
-        lua_pop(L, 1);
-    }
-    if(lua_getglobal(L, "https_proxy") == LUA_TSTRING) {
-        strcpy(config.https_proxy, lua_tostring(L, -1));
+    if(lua_getglobal(L, "proxy") == LUA_TSTRING) {
+        strcpy(config.proxy, lua_tostring(L, -1));
         lua_pop(L, 1);
     }
     if(lua_getglobal(L, "check_mode") == LUA_TBOOLEAN) {
@@ -249,7 +246,7 @@ static void usage(const char *name) {
     printf("Usage: %s [-s luascript] [-k cookies] [-p proxy] [-u] [-c] [-q] [-l] [-h] <url> <url> ...\n", name);
     printf("  -s: which lua script to execute\n");
     printf("  -k: cookies used to access url with logging and more features\n");
-    printf("  -p: support only http and https proxy, example: \"https://127.0.0.1:7777\"\n");
+    printf("  -p: support any proxy, include a HTTP proxy tunnel, example: \"http://127.0.0.1:7777\"\n");
     printf("  -u: get the latest release and more lua scripts\n");
     printf("  -c: check mode for testing lua script, whithout downloading any files\n");
     printf("  -q: quiet mode, do not write output to stdout\n");
@@ -292,14 +289,7 @@ int main(int argc, char **argv) {
                 strcpy(config.cookies, optarg);
                 break;
             case 'p':
-                if(strstr(optarg, "http://") != NULL)
-                    strcpy(config.http_proxy, optarg);
-                else if(strstr(optarg, "https://") != NULL)
-                    strcpy(config.https_proxy, optarg);
-                else {
-                    printf("only support http and https proxy\n");
-                    return 1;
-                }
+                strcpy(config.proxy, optarg);
                 break;
             case 'u':
                 curl_global_init(CURL_GLOBAL_ALL);
@@ -336,7 +326,7 @@ int main(int argc, char **argv) {
             config.logger = false;
         }
     }
-    print_log("script: %s, cookies: %s, http_proxy: %s, https_proxy: %s, check_mode: %d, quiet: %d, logger: %d", strlen(config.script) ? config.script : "none", strlen(config.cookies) ? config.cookies : "none", strlen(config.http_proxy) ? config.http_proxy : "none", strlen(config.https_proxy) ? config.https_proxy : "none", config.check_mode, config.quiet, config.logger);
+    print_log("script: %s, cookies: %s, proxy: %s, check_mode: %d, quiet: %d, logger: %d", strlen(config.script) ? config.script : "none", strlen(config.cookies) ? config.cookies : "none", strlen(config.proxy) ? config.proxy : "none", config.check_mode, config.quiet, config.logger);
     print_log("thread count: %d", THREAD_COUNT);
 
     signal(SIGINT, exit_hook);
