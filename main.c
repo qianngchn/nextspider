@@ -14,9 +14,9 @@
 #include <libgen.h>
 
 #define THREAD_COUNT 2
-#define MIN_BUFF_SIZE 1024
-#define MED_BUFF_SIZE 1024 << 2
-#define MAX_BUFF_SIZE 1024 << 10
+#define MIN_BUFF_SIZE (1024 >> 1)
+#define MED_BUFF_SIZE (1024 << 2)
+#define MAX_BUFF_SIZE (1024 << 10)
 
 typedef struct {
     char script[MIN_BUFF_SIZE];
@@ -53,7 +53,7 @@ static void print_log(const char *format, ...)
         va_end(ap);
         if(!config.quiet)
             printf("[%s] %s\n", buff, message);
-        if(config.logger)
+        if(config.logger && logger != NULL)
             fprintf(logger, "[%s] %s\n", buff, message);
     }
 }
@@ -71,7 +71,7 @@ static size_t _curl_write_file(const void *data, size_t size, size_t count, FILE
     return len;
 }
 
-size_t (*curl_write_buff)(const char *data, size_t size, size_t count, void *buff) = _curl_write_buff;
+static size_t (*curl_write_buff)(const char *data, size_t size, size_t count, void *buff) = _curl_write_buff;
 static bool curl_buff(const char *url, char *buff) {
     if(buff == NULL) return false; else *buff = 0;
     CURL *curl = curl_easy_init();
@@ -97,7 +97,7 @@ static bool curl_buff(const char *url, char *buff) {
     return ret == 0;
 }
 
-size_t (*curl_write_file)(const void *data, size_t size, size_t count, FILE *file) = _curl_write_file;
+static size_t (*curl_write_file)(const void *data, size_t size, size_t count, FILE *file) = _curl_write_file;
 static bool curl_file(const char *url, FILE *file) {
     if(file == NULL) return false;
     CURL *curl = curl_easy_init();
@@ -319,13 +319,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if(config.logger) {
-        logger = fopen(logger_file, "a");
-        if(logger == NULL) {
-            print_log("log open error: %s", logger_file);
-            config.logger = false;
-        }
-    }
+    if(config.logger && logger == NULL)
+        logger = fopen(logger_file, "ab");
     print_log("script: %s, cookies: %s, proxy: %s, check_mode: %d, quiet: %d, logger: %d", strlen(config.script) ? config.script : "none", strlen(config.cookies) ? config.cookies : "none", strlen(config.proxy) ? config.proxy : "none", config.check_mode, config.quiet, config.logger);
     print_log("thread count: %d", THREAD_COUNT);
 
@@ -356,7 +351,7 @@ int main(int argc, char **argv) {
     }
 
     print_log("bye bye, enjoy your life");
-    if(config.logger)
+    if(config.logger && logger != NULL)
         fclose(logger);
 
     curl_global_cleanup();
