@@ -28,20 +28,19 @@ typedef struct {
 } global_config;
 
 typedef struct {
-    char html[MAX_BUFF_SIZE];
+    char func[MIN_BUFF_SIZE];
     char url[MED_BUFF_SIZE];
+    char html[MAX_BUFF_SIZE];
+    char nexturl[MED_BUFF_SIZE];
     char files[MED_BUFF_SIZE];
     bool stop;
 } global_script;
 
 static bool shutdown_flag = false;
 static FILE *logger = NULL;
-static char logger_file[MIN_BUFF_SIZE] = "stat.log";
-static char config_file[MIN_BUFF_SIZE] = "config.lua";
 static global_config config = {{0}, {0}, {0}, false, false, false};
 
-static void print_log(const char *format, ...)
-{
+static void print_log(const char *format, ...) {
     if(!config.quiet || config.logger) {
         char message[MED_BUFF_SIZE];
         char buff[MIN_BUFF_SIZE];
@@ -87,6 +86,7 @@ static bool curl_buff(const char *url, char *buff) {
     if(strstr(config.proxy, "http://") != NULL && strstr(url, "http://") == NULL)
         curl_easy_setopt(curl, CURLOPT_HTTPPROXYTUNNEL, 1L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
 #if defined(__linux) || defined(__linux__) || defined(linux)
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 #endif
@@ -112,6 +112,10 @@ static bool curl_file(const char *url, FILE *file) {
         curl_easy_setopt(curl, CURLOPT_PROXY, config.proxy);
     if(strstr(config.proxy, "http://") != NULL && strstr(url, "http://") == NULL)
         curl_easy_setopt(curl, CURLOPT_HTTPPROXYTUNNEL, 1L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+#if defined(__linux) || defined(__linux__) || defined(linux)
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+#endif
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 30L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_file);
@@ -121,34 +125,34 @@ static bool curl_file(const char *url, FILE *file) {
     return ret == 0;
 }
 
-static bool execute_script(lua_State *L, char *html, char *url, char *files, bool *stop) {
-    char func[MIN_BUFF_SIZE] = "parse_html";
+static bool execute_script(lua_State *L, const char *func, char *url, char *html, char *nexturl, char *files, bool *stop) {
     if(lua_getglobal(L, func) != LUA_TFUNCTION) {
-        print_log("script call error: %s is nil or not a function", func);
+        print_log("script execute error: %s is nil or not a function", func);
         lua_pop(L, 1);
         return false;
     }
     lua_pushstring(L, url);
     lua_pushstring(L, html);
     if(lua_pcall(L, 2, 3, 0)) {
-        print_log("script call error: %s function called error", func);
+        print_log("script execute error: function %s called error", func);
+        lua_pop(L, 1);
         return false;
     }
     if(!lua_isboolean(L, -1) || !lua_isstring(L, -2) || !lua_isstring(L, -3)) {
-        print_log("script call error: the return value's type is nil or not correct type");
+        print_log("script execute error: the return value's type is nil or not correct type");
         lua_pop(L, 3);
         return false;
     }
     *stop = lua_toboolean(L, -1);
     strcpy(files, lua_tostring(L, -2));
-    strcpy(url, lua_tostring(L, -3));
+    strcpy(nexturl, lua_tostring(L, -3));
     lua_pop(L, 3);
     return true;
 }
 
 static void *handle_loop(void *param) {
-    global_script script = {{0}, {0}, {0}, false};
-    strncpy(script.url, param, MED_BUFF_SIZE);
+    global_script script = {"parse_html", {0}, {0}, {0}, {0}, false};
+    strncpy(script.url, param, sizeof(script.url));
     if(strlen(config.script) == 0) {
         if(curl_buff(script.url, script.html))
             printf("%s\n", script.html);
@@ -166,32 +170,39 @@ static void *handle_loop(void *param) {
         return NULL;
     }
     while(!script.stop && !shutdown_flag) {
+        if(strlen(script.nexturl) != 0)
+            strncpy(script.url, script.nexturl, sizeof(script.url));
+        *(script.html) = 0;
         if(curl_buff(script.url, script.html)) {
-            if(!execute_script(L, script.html, script.url, script.files, &script.stop))
+            *(script.nexturl) = 0;
+            *(script.files) = 0;
+            script.stop = false;
+            if(!execute_script(L, script.func, script.url, script.html, script.nexturl, script.files, &script.stop))
                 break;
-            print_log("nexturl: %s, stop: %d", script.url, script.stop);
+            print_log("current url: %s", script.url);
+            print_log("nexturl: %s, stop: %d", script.nexturl, script.stop);
             print_log("files: %s", script.files);
-            if(config.check_mode)
-                continue;
-            char *fileurl, *filename;
-            char *token = strtok(script.files, " ");
-            while(token != NULL) {
-                fileurl = token;
-                token = strtok(NULL, " ");
-                if(token != NULL) {
-                    filename = token;
-                    FILE *file = fopen(filename, "wb");
-                    if(file != NULL) {
-                        if(curl_file(fileurl, file))
-                            print_log("done: %s", filename);
-                        else {
-                            print_log("file url error: %s", fileurl);
-                        }
-                        fclose(file);
-                    } else {
-                        print_log("file open error: %s", filename);
-                    }
+            if(!config.check_mode) {
+                char *fileurl, *filename;
+                char *token = strtok(script.files, " ");
+                while(token != NULL) {
+                    fileurl = token;
                     token = strtok(NULL, " ");
+                    if(token != NULL) {
+                        filename = token;
+                        FILE *file = fopen(filename, "wb");
+                        if(file != NULL) {
+                            if(curl_file(fileurl, file))
+                                print_log("done: %s", filename);
+                            else {
+                                print_log("file url error: %s", fileurl);
+                            }
+                            fclose(file);
+                        } else {
+                            print_log("file open error: %s", filename);
+                        }
+                        token = strtok(NULL, " ");
+                    }
                 }
             }
         } else {
@@ -204,13 +215,12 @@ static void *handle_loop(void *param) {
     return NULL;
 }
 
-void exit_hook(int number)
-{
+void exit_hook(int number) {
     shutdown_flag = true;
     printf("shut down now, exit signal: %d\n", number);
 }
 
-static bool load_config(void) {
+static bool load_config(char *config_file) {
     lua_State *L = luaL_newstate();
     if(luaL_dofile(L, config_file))
         return false;
@@ -260,6 +270,8 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    char config_file[MIN_BUFF_SIZE] = "config.lua";
+    char logger_file[MIN_BUFF_SIZE] = "stat.log";
 #if defined(__linux) || defined(__linux__) || defined(linux)
     char home[MIN_BUFF_SIZE] = {0};
     char dirname[MIN_BUFF_SIZE] = {0};
@@ -268,15 +280,16 @@ int main(int argc, char **argv) {
     strcpy(dirname, basename(argv[0]));
     strcpy(filename, config_file);
     sprintf(config_file, "%s/.%s/%s", home, dirname, filename);
-    strcpy(filename, logger_file);
-    sprintf(logger_file, "%s/.%s/%s", home, dirname, filename);
-    load_config();
-    if(strlen(config.script) != 0) {
-        strcpy(filename, config.script);
-        sprintf(config.script, "%s/.%s/%s", home, dirname, filename);
+    if(load_config(config_file)) {
+        strcpy(filename, logger_file);
+        sprintf(logger_file, "%s/.%s/%s", home, dirname, filename);
+        if(strlen(config.script) != 0) {
+            strcpy(filename, config.script);
+            sprintf(config.script, "%s/.%s/%s", home, dirname, filename);
+        }
     }
 #else
-    load_config();
+    load_config(config_file);
 #endif
 
     int opt = 0;
