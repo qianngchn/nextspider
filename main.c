@@ -127,19 +127,19 @@ static bool curl_file(const char *url, FILE *file) {
 
 static bool execute_script(lua_State *L, const char *func, char *url, char *html, char *nexturl, char *files, bool *stop) {
     if(lua_getglobal(L, func) != LUA_TFUNCTION) {
-        print_log("script execute error: %s is nil or not a function", func);
+        print_log("* error: %s is nil or not a function", func);
         lua_pop(L, 1);
         return false;
     }
     lua_pushstring(L, url);
     lua_pushstring(L, html);
     if(lua_pcall(L, 2, 3, 0)) {
-        print_log("script execute error: function %s called error", func);
+        print_log("* error: a runtime exception occurs in function %s", func);
         lua_pop(L, 1);
         return false;
     }
     if(!lua_isboolean(L, -1) || !lua_isstring(L, -2) || !lua_isstring(L, -3)) {
-        print_log("script execute error: the return value's type is nil or not correct type");
+        print_log("* error: function %s returns nil or incorrect type", func);
         lua_pop(L, 3);
         return false;
     }
@@ -157,14 +157,14 @@ static void *handle_loop(void *param) {
         if(curl_buff(script.url, script.html))
             printf("%s\n", script.html);
         else
-            print_log("url get error: %s", script.url);
+            print_log("* error: %s is not reachable", script.url);
         pthread_exit(NULL);
         return NULL;
     }
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
     if(luaL_dofile(L, config.script)) {
-        print_log("script load error: %s", config.script);
+        print_log("* error: %s can not be loaded", config.script);
         lua_close(L);
         pthread_exit(NULL);
         return NULL;
@@ -179,9 +179,9 @@ static void *handle_loop(void *param) {
             script.stop = false;
             if(!execute_script(L, script.func, script.url, script.html, script.nexturl, script.files, &script.stop))
                 break;
-            print_log("current url: %s", script.url);
-            print_log("nexturl: %s, stop: %d", script.nexturl, script.stop);
-            print_log("files: %s", script.files);
+            print_log("> url: %s", script.url);
+            print_log("< nexturl: %s, stop: %d", script.nexturl, script.stop);
+            print_log("< files: %s", script.files);
             if(!config.check_mode) {
                 char *fileurl, *filename;
                 char *token = strtok(script.files, " ");
@@ -193,20 +193,18 @@ static void *handle_loop(void *param) {
                         FILE *file = fopen(filename, "wb");
                         if(file != NULL) {
                             if(curl_file(fileurl, file))
-                                print_log("done: %s", filename);
-                            else {
-                                print_log("file url error: %s", fileurl);
-                            }
+                                print_log("+ done: %s", filename);
+                            else
+                                print_log("+ error: %s is not reachable", fileurl);
                             fclose(file);
-                        } else {
-                            print_log("file open error: %s", filename);
-                        }
+                        } else
+                            print_log("+ error: %s can not be opened", filename);
                         token = strtok(NULL, " ");
                     }
                 }
             }
         } else {
-            print_log("url get error: %s", script.url);
+            print_log("* error: %s is not reachable", script.url);
             break;
         }
     }
@@ -334,8 +332,8 @@ int main(int argc, char **argv) {
 
     if(config.logger && logger == NULL)
         logger = fopen(logger_file, "ab");
-    print_log("script: %s, cookies: %s, proxy: %s, check_mode: %d, quiet: %d, logger: %d", strlen(config.script) ? config.script : "none", strlen(config.cookies) ? config.cookies : "none", strlen(config.proxy) ? config.proxy : "none", config.check_mode, config.quiet, config.logger);
-    print_log("thread count: %d", THREAD_COUNT);
+    print_log("* script: %s, cookies: %s, proxy: %s, check_mode: %d, quiet: %d, logger: %d", strlen(config.script) ? config.script : "none", strlen(config.cookies) ? config.cookies : "none", strlen(config.proxy) ? config.proxy : "none", config.check_mode, config.quiet, config.logger);
+    print_log("* thread count: %d", THREAD_COUNT);
 
     signal(SIGINT, exit_hook);
     signal(SIGTERM, exit_hook);
@@ -350,20 +348,24 @@ int main(int argc, char **argv) {
     curl_global_init(CURL_GLOBAL_ALL);
     for(i = 0; i < argc - optind && !shutdown_flag; i = i + THREAD_COUNT) {
         for(j = 0; j < THREAD_COUNT; j++) {
-            if(pthread_create(tid+j, NULL, handle_loop, argv[optind + i + j]) != 0)
-                print_log("thread create error:  %s", argv[optind + i + j]);
-            print_log("thread for %s start", argv[optind + i + j]);
+            if(pthread_create(tid + j, NULL, handle_loop, argv[optind + i + j]) != 0) {
+                print_log("* error: thread for %s can not be created", argv[optind + i + j]);
+                return 1;
+            }
+            print_log("* thread for %s start", argv[optind + i + j]);
             if(argc == optind + i + j + 1) break;
         }
         for(j = 0; j < THREAD_COUNT; j++) {
-            if(pthread_join(tid[j], NULL) != 0)
-                print_log("thread join error: %s", argv[optind + i + j]);
-            print_log("thread for %s exit", argv[optind + i + j]);
+            if(pthread_join(tid[j], NULL) != 0) {
+                print_log("* error: thread for %s can not be joined", argv[optind + i + j]);
+                return 1;
+            }
+            print_log("* thread for %s exit", argv[optind + i + j]);
             if(argc == optind + i + j + 1) break;
         }
     }
 
-    print_log("bye bye, enjoy your life");
+    print_log("* bye bye, enjoy your life");
     if(config.logger && logger != NULL)
         fclose(logger);
 

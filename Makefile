@@ -5,7 +5,7 @@ CC:=gcc -std=gnu99
 CFLAGS:=-Wall -O2 $(PLATCFLAGS)
 LDFLAGS:=-lpthread -llua -lcurl $(PLATLDFLAGS)
 SRCS:=main.c
-OBJS:=$(SRCS:.c=.o)
+OBJS:=$(SRCS:%.c=%.o)
 
 BIN:=nextspider
 
@@ -38,8 +38,8 @@ linux:
 mingw:
 	$(MAKE) $(ALL) "PLATCFLAGS=-static -DCURL_STATICLIB" "PLATLDFLAGS=-lssl -lcrypto -lgdi32 -lwldap32 -lz -lws2_32"
 
-$(OBJS):$(SRCS)
-	$(CC) -c $^ $(CFLAGS)
+%.o:%.c
+	$(CC) $^ $(CFLAGS) -c -o $@
 
 $(BIN):$(OBJS)
 	$(CC) $^ $(CFLAGS) $(LDFLAGS) -o $@
